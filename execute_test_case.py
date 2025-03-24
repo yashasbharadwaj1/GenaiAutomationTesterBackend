@@ -23,6 +23,7 @@ config = BrowserConfig(
     headless=True,
     disable_security=True,
     extra_chromium_args=[
+	     			'--headless=new',
 				'--no-sandbox',
 				'--disable-blink-features=AutomationControlled',
 				'--disable-infobars',
