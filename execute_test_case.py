@@ -20,7 +20,7 @@ llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", api_key=os.getenv("GEMINI
 controller = Controller()
 
 config = BrowserConfig(
-    headless=False,
+    headless=True,
     disable_security=True,
     extra_chromium_args=[],
     proxy=None
