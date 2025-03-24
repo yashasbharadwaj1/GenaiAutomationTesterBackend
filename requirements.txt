@@ -1,4 +1,5 @@
-uvicorn
+uvicorn 
+python-multipart
 httpx
 fastapi
 python-dotenv
