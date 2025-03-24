@@ -22,7 +22,11 @@ controller = Controller()
 config = BrowserConfig(
     headless=True,
     disable_security=True,
-    extra_chromium_args=[],
+    extra_chromium_args=[
+        "--no-sandbox",
+        "--disable-gpu",
+        "--disable-dev-shm-usage"
+    ],
     proxy=None
 )
 browser = Browser(config=config)
