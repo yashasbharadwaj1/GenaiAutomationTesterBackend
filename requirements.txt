@@ -1,3 +1,4 @@
+uvicorn
 httpx
 fastapi
 python-dotenv
