@@ -23,9 +23,19 @@ config = BrowserConfig(
     headless=True,
     disable_security=True,
     extra_chromium_args=[
-        "--no-sandbox",
-        "--disable-gpu",
-        "--disable-dev-shm-usage"
+				'--no-sandbox',
+				'--disable-blink-features=AutomationControlled',
+				'--disable-infobars',
+				'--disable-background-timer-throttling',
+				'--disable-popup-blocking',
+				'--disable-backgrounding-occluded-windows',
+				'--disable-renderer-backgrounding',
+				'--disable-window-activation',
+				'--disable-focus-on-load',
+				'--no-first-run',
+				'--no-default-browser-check',
+				'--no-startup-window',
+				'--window-position=0,0',
     ],
     proxy=None
 )
