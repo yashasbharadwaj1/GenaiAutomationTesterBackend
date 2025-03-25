@@ -362,20 +362,20 @@ async def execute_test_cases(test_cases_prompt: TestCasesPrompt):
     os.makedirs(temp_dir, exist_ok=True)
 
     # Convert GIF to Video mp4
-    frames = imageio.mimread("agent_history.gif")
-    clip = ImageSequenceClip(frames, fps=1)
-    video_filename = f"{project_name}_{test_suite_name}.mp4"
-    video_file_path = os.path.join(temp_dir, video_filename)
-    clip.write_videofile(video_file_path, codec="libx264")
+    # frames = imageio.mimread("agent_history.gif")
+    # clip = ImageSequenceClip(frames, fps=1)
+    # video_filename = f"{project_name}_{test_suite_name}.mp4"
+    # video_file_path = os.path.join(temp_dir, video_filename)
+    # clip.write_videofile(video_file_path, codec="libx264")
 
     # Upload the video file to Supabase.
-    video_public_url = upload_file_to_supabase(video_file_path)
+    # video_public_url = upload_file_to_supabase(video_file_path)
 
     # Remove the local video file after uploading.
-    if os.path.exists(video_file_path):
-        os.remove(video_file_path)
+    # if os.path.exists(video_file_path):
+    #     os.remove(video_file_path)
 
-    agent_response["video_public_url"] = video_public_url
+    agent_response["video_public_url"] = None
 
     # Delete any previous results for the same project and test suite.
     supabase.table("results") \
