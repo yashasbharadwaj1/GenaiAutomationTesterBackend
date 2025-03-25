@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# Install system dependencies for FastAPI and Playwright
+# Install system dependencies required by Playwright
 RUN apt-get update && apt-get install -y \
     curl \
     gnupg \
@@ -21,17 +21,18 @@ WORKDIR /app
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright and download browsers
-RUN pip install playwright && python -m playwright install-deps
+# Install Playwright and then download the browser binaries
+RUN pip install playwright
+RUN playwright install
 
 # Copy your application code
 COPY . /app
 
-# Unset DISPLAY to avoid X server issues
+# Unset DISPLAY to avoid X server issues (if necessary)
 ENV DISPLAY=
 
-# Expose the port (adjust if needed)
+# Expose the port your FastAPI app uses (e.g., 8000)
 EXPOSE 8000
 
-# Start your FastAPI app with Uvicorn
+# Start your FastAPI app using Uvicorn
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
