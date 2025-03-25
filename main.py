@@ -375,7 +375,7 @@ async def execute_test_cases(test_cases_prompt: TestCasesPrompt):
     # if os.path.exists(video_file_path):
     #     os.remove(video_file_path)
 
-    agent_response["video_public_url"] = None
+    agent_response["video_public_url"] = "empty"
 
     # Delete any previous results for the same project and test suite.
     supabase.table("results") \
