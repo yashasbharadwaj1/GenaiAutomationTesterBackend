@@ -22,7 +22,7 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Install Playwright and then download the browser binaries
-RUN pip install playwright
+RUN pip install playwright && python -m playwright install-deps
 RUN playwright install
 
 # Copy your application code
