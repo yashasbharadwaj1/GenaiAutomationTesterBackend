@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# Install system dependencies required by Playwright
+# Install system dependencies for Playwright, X server, and DBus
 RUN apt-get update && apt-get install -y \
     curl \
     gnupg \
@@ -13,6 +13,8 @@ RUN apt-get update && apt-get install -y \
     libxdamage1 \
     libxrandr2 \
     xvfb \
+    xorg \
+    dbus-x11 \
     --no-install-recommends && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -21,18 +23,21 @@ WORKDIR /app
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright and then download the browser binaries
-RUN pip install playwright && python -m playwright install-deps
-RUN playwright install
+# Install Playwright and download browser binaries and dependencies
+RUN pip install playwright && python -m playwright install-deps && playwright install
 
 # Copy your application code
 COPY . /app
 
-# Unset DISPLAY to avoid X server issues (if necessary)
+# Unset DISPLAY to avoid any accidental X server connection attempts
 ENV DISPLAY=
 
-# Expose the port your FastAPI app uses (e.g., 8000)
+# Expose the port your FastAPI app uses (adjust as needed)
 EXPOSE 8000
 
-# Start your FastAPI app using Uvicorn
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Use an entrypoint that starts DBus and Xvfb before running your app.
+# This command will:
+#   - Start the system DBus daemon in the background.
+#   - Use xvfb-run to create a virtual X server for the browser.
+#   - Finally, run your FastAPI app via Uvicorn.
+CMD ["bash", "-c", "dbus-daemon --system & xvfb-run --server-args='-screen 0 1920x1080x24' uvicorn main:app --host 0.0.0.0 --port 8000"]
