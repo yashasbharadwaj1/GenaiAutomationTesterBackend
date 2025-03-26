@@ -1,6 +1,3 @@
-playwright
-uvicorn 
-python-multipart
 httpx
 fastapi
 python-dotenv
@@ -15,3 +12,4 @@ truststore
 browser_use
 imageio
 moviepy
+gitpython
