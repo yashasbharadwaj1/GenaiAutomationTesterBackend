@@ -106,7 +106,7 @@ def upload_file_to_supabase(file: Union[str, UploadFile], bucket_name: str = "fi
     public_url = supabase.storage.from_(bucket_name).get_public_url(filename)
     return public_url
 
-@app.post("/upload/pdf", response_model=UploadResponse, tags=["Generate Test Case"])
+@app.post("/upload/pdf", response_model=UploadResponse, tags=["Black Box Testing"])
 def upload_pdf_file(
         file: UploadFile = File(...),
         project: str = Form(...),
@@ -214,7 +214,7 @@ def process_video_to_pdf(temp_file_path: str, project: str, test_suite: str):
             logger.error("Error removing PDF file %s: %s", pdf_filename, remove_err)
 
 
-@app.post("/upload/video", response_model=UploadVideoDocResponse, tags=["Generate Test Case"])
+@app.post("/upload/video", response_model=UploadVideoDocResponse, tags=["Black Box Testing"])
 def upload_video_file(
         file: UploadFile = File(...),
         background_tasks: BackgroundTasks = None,
@@ -236,7 +236,7 @@ def upload_video_file(
     return UploadVideoDocResponse(status="processing", project=project, test_suite=test_suite)
 
 
-@app.post("/prepare/testcase/and/store", response_model=PrepareTestCaseAndStoreResponse, tags=["Generate Test Case"])
+@app.post("/prepare/testcase/and/store", response_model=PrepareTestCaseAndStoreResponse, tags=["Black Box Testing"])
 def prepare_test_case_and_store_it(request: PrepareTestCaseAndStoreRequest):
     # Retrieve document info using both project and test_suite
 
@@ -323,7 +323,7 @@ Ensure that your final output is valid JSON and that it comprehensively covers a
     return {"status": "success", "data": data}
 
 
-@app.post("/retrieve/testcase/info", response_model=TestCaseExtractorResponse, tags=["Generate Test Case"])
+@app.post("/retrieve/testcase/info", response_model=TestCaseExtractorResponse, tags=["Black Box Testing"])
 def retrieve_test_case_info(request: TestCaseExtractorRequest):
     result = supabase.table("testcases") \
         .select("project, test_suite, test_case_name, testing_steps, expected_output") \
@@ -348,7 +348,7 @@ def retrieve_test_case_info(request: TestCaseExtractorRequest):
     return TestCaseExtractorResponse(test_cases=test_cases)
 
 
-@app.post("/execute/testcases", tags=["Execute Test Cases"])
+@app.post("/execute/testcases", tags=["Black Box Testing"])
 async def execute_test_cases(test_cases_prompt: TestCasesPrompt):
     # Dump prompt data and run the agent.
     test_cases = test_cases_prompt.model_dump()
@@ -395,7 +395,7 @@ async def execute_test_cases(test_cases_prompt: TestCasesPrompt):
     return agent_response
 
 
-@app.post("/upload/testing/steps", tags=["Existing Test Case Input"])
+@app.post("/upload/testing/steps", tags=["Black Box Testing"])
 def upload_testing_steps(request: TestCase):
     row = {
         "project": request.project,
@@ -427,3 +427,203 @@ def upload_testing_steps(request: TestCase):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     return {"status": "success", "data": row}
+
+
+
+def parse_github_repo(repo_url: str):
+    """
+    Parses a GitHub repo URL to extract the owner and repository name.
+    """
+    # Remove trailing slash and .git suffix if present
+    repo_url = repo_url.rstrip("/").replace(".git", "")
+    pattern = r"https://github\.com/([^/]+)/([^/]+)"
+    match = re.match(pattern, repo_url)
+    if match:
+        owner = match.group(1)
+        repo_name = match.group(2)
+        return owner, repo_name
+    return None, None
+
+
+def check_repo_privacy(owner: str, repo_name: str, username: str = None, pat_token: str = None):
+    """
+    Uses GitHub API to determine if a repository is private.
+    """
+    api_url = f"https://api.github.com/repos/{owner}/{repo_name}"
+    auth = None
+    if pat_token:
+        # For private repo API access, credentials are needed.
+        # If username isn't provided, an empty string is used.
+        auth = (username if username else "", pat_token)
+    response = requests.get(api_url, auth=auth)
+    if response.status_code == 200:
+        repo_data = response.json()
+        return repo_data.get("private", False)
+    else:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=f"Error accessing repository info: {response.text}"
+        )
+
+
+def clone_repo(repo_url: str, destination_folder: str, branch: str = None):
+    """
+    Clones the repository if the destination folder does not exist.
+    If a branch is specified, clones that branch; otherwise, clones the default branch.
+    """
+    if not os.path.exists(destination_folder):
+        try:
+            if branch:
+                git.Repo.clone_from(repo_url, destination_folder, branch=branch)
+            else:
+                git.Repo.clone_from(repo_url, destination_folder)
+            return f"Repository cloned successfully into '{destination_folder}'."
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error cloning repository: {e}")
+    else:
+        return f"Directory '{destination_folder}' already exists. Skipping clone."
+
+
+@app.post("/clone/repo", tags=["White Box Testing"])
+def clone_github_repo(clone_request: CloneRequest):
+    repo_url = clone_request.repo_url
+    branch = clone_request.branch
+
+    # Parse the repo URL to extract owner and repository name.
+    owner, repo_name = parse_github_repo(repo_url)
+    if not owner or not repo_name:
+        raise HTTPException(status_code=400, detail="Invalid GitHub repository URL format.")
+
+    # Use the repository name as the destination folder.
+    destination_folder = repo_name
+
+    # Determine if the repository is private by calling the GitHub API.
+    try:
+        is_private = check_repo_privacy(owner, repo_name, clone_request.username, clone_request.pat_token)
+    except HTTPException as e:
+        raise e
+
+    # For private repos, ensure that a PAT token is provided.
+    if is_private:
+        if not clone_request.pat_token:
+            raise HTTPException(
+                status_code=401,
+                detail="Private repository requires a Personal Access Token (PAT)."
+            )
+        # Modify the repo URL to include authentication credentials.
+        if repo_url.startswith("https://"):
+            user = clone_request.username if clone_request.username else ""
+            repo_url = repo_url.replace("https://", f"https://{user}:{clone_request.pat_token}@")
+
+    message = clone_repo(repo_url, destination_folder, branch)
+    return {"message": message, "destination": destination_folder}
+
+
+def get_code_from_files(folder, extensions=None):
+    """
+    Recursively reads code files from the given folder.
+    """
+    if extensions is None:
+        extensions = ['.py', '.js', '.java', '.cpp', '.c', '.ts']
+    code_snippets = {}
+    for root, _, files in os.walk(folder):
+        for file in files:
+            if any(file.endswith(ext) for ext in extensions):
+                file_path = os.path.join(root, file)
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        code = f.read()
+                        code_snippets[file_path] = code
+                except Exception as e:
+                    print(f"Failed to read {file_path}: {e}")
+    return code_snippets
+
+def aggregate_code(code_snippets):
+    """
+    Aggregates code from all files, adding file context.
+    """
+    aggregated = ""
+    for file_path, code in code_snippets.items():
+        aggregated += f"File: {file_path}\n{code}\n\n"
+    return aggregated
+
+
+@app.post("/analyze/code_review", tags=["White Box Testing"])
+def analyze_code_review(request: CodeReviewRequest):
+    folder = request.repo_name
+    if not os.path.exists(folder):
+        raise HTTPException(status_code=404, detail=f"Repository folder '{folder}' not found.")
+
+    # Read and aggregate code from the repository folder.
+    code_files = get_code_from_files(folder)
+    aggregated_code = aggregate_code(code_files)
+
+    # Define system instruction to direct Gemini for a factor-based analysis in JSON.
+    system_instruction = r"""
+You are a code review agent. You will be given a large chunk of code.
+Please analyze the code for the following factors and return the result in valid JSON format:
+{
+  "Code Coverage": "<analysis>",
+  "Logic Flaws": "<analysis>",
+  "Complexity": "<analysis>",
+  "Input Validation": "<analysis>",
+  "Security Issues": "<analysis>",
+  "Error Handling": "<analysis>",
+  "Code Style & Best Practices": "<analysis>",
+  "Performance Hotspots": "<analysis>"
+}
+Analyze the code based on:
+- Code Coverage: Line, branch, function, and path coverage.
+- Logic Flaws: Incorrect logic, dead code, unreachable conditions.
+- Complexity: Cyclomatic complexity, deeply nested conditions.
+- Input Validation: Lack of input sanitization, boundary conditions.
+- Security Issues: SQL injection, XSS, hardcoded secrets, etc.
+- Error Handling: Missing try/catch, poor exception management.
+- Code Style & Best Practices: Lint errors, naming, conventions.
+- Performance Hotspots: Inefficient loops, unnecessary database calls.
+"""
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            config=types.GenerateContentConfig(system_instruction=system_instruction),
+            contents=aggregated_code
+        )
+        code_review_result = response.text
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error communicating with Gemini: {e}")
+
+    processed_code_review_result = process_response(code_review_result)
+    return {"result": processed_code_review_result}
+
+
+@app.post("/generate/unit_tests", tags=["White Box Testing"])
+def generate_unit_tests(request: UnitTestRequest):
+    folder = request.repo_name
+    if not os.path.exists(folder):
+        raise HTTPException(status_code=404, detail=f"Repository folder '{folder}' not found.")
+
+    # Read and aggregate code from the repository folder.
+    code_files = get_code_from_files(folder)
+    aggregated_code = aggregate_code(code_files)
+
+    system_instruction = r"""
+You are a unit test generator for a Python codebase. 
+Your task is to analyze the provided repository code and generate comprehensive, copy-paste ready unit tests for each file.
+Ensure that the tests follow best practices for Python unit testing.
+Return the complete unit test code as a single Python string enclosed within triple double quotes.
+Do not include any additional text, explanations, or JSON formatting—only the unit test code.
+"""
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            config=types.GenerateContentConfig(system_instruction=system_instruction),
+            contents=aggregated_code
+        )
+        unit_testing_result = response.text
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error communicating with Gemini: {e}")
+
+    logger.info("unit testing result: %s", unit_testing_result)
+    return {"repo": folder, "unit_tests": unit_testing_result}
