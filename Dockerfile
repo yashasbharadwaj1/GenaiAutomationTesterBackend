@@ -1,9 +1,10 @@
 FROM python:3.11-slim
 
-# Install system dependencies for Playwright, X server, and DBus
+# Install system dependencies for Playwright, X server, DBus, and git
 RUN apt-get update && apt-get install -y \
     curl \
     gnupg \
+    git \
     libnss3 \
     libatk1.0-0 \
     libatk-bridge2.0-0 \
@@ -35,9 +36,8 @@ ENV DISPLAY=
 # Expose the port your FastAPI app uses (adjust as needed)
 EXPOSE 8000
 
+# Optionally, if you run into issues with GitPython still not locating git, set the executable path explicitly:
+# ENV GIT_PYTHON_GIT_EXECUTABLE=/usr/bin/git
+
 # Use an entrypoint that starts DBus and Xvfb before running your app.
-# This command will:
-#   - Start the system DBus daemon in the background.
-#   - Use xvfb-run to create a virtual X server for the browser.
-#   - Finally, run your FastAPI app via Uvicorn.
 CMD ["bash", "-c", "dbus-daemon --system & xvfb-run --server-args='-screen 0 1920x1080x24' uvicorn main:app --host 0.0.0.0 --port 8000"]
