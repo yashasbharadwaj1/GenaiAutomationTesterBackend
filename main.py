@@ -7,7 +7,6 @@ import time
 import uuid
 from io import BytesIO
 import cv2
-import git
 import httpx
 from PIL import Image, ImageFilter
 from dotenv import load_dotenv
@@ -20,7 +19,7 @@ from typing import Union
 from base_models import *
 from execute_test_case import run_agent
 import requests
-from werkzeug.utils import secure_filename
+
 
 load_dotenv()
 
