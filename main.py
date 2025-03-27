@@ -590,9 +590,26 @@ Analyze the code based on:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error communicating with Gemini: {e}")
 
-    # Assume process_response is a function that cleans or parses the Gemini output.
+    # Process the AI output to get a valid JSON object.
     processed_code_review_result = process_response(code_review_result)
-    return {"repo":folder,"result": processed_code_review_result}
+
+    # Delete existing code review result for this repo and insert new one.
+    try:
+        # Delete if a record already exists for this repo.
+        supabase.table("code_review_results").delete().eq("repo_name", request.repo_name).execute()
+
+        # Insert the new result.
+        row = {
+            "id": str(uuid.uuid4()),
+            "repo_name": request.repo_name,
+            "code_review_result": processed_code_review_result,
+        }
+        supabase.table("code_review_results").insert(row).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating code review result in DB: {e}")
+
+    return {"repo": folder, "result": processed_code_review_result}
+
 
 @app.post("/generate/unit_tests", tags=["White Box Testing"])
 def generate_unit_tests(request: UnitTestRequest):
@@ -624,5 +641,62 @@ Do not include any additional text, explanations, or JSON formatting—only the 
         raise HTTPException(status_code=500, detail=f"Error communicating with Gemini: {e}")
 
     logger.info("unit testing result: %s", unit_testing_result)
+
+    # Delete existing unit test result for this repo and insert the new one.
+    try:
+        # Delete if a record already exists for this repo.
+        supabase.table("unit_test_results").delete().eq("repo_name", request.repo_name).execute()
+
+        # Insert the new result.
+        row = {
+            "id": str(uuid.uuid4()),
+            "repo_name": request.repo_name,
+            "unit_test_result": unit_testing_result,
+        }
+        supabase.table("unit_test_results").insert(row).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating unit test result in DB: {e}")
+
     return {"repo": folder, "result": unit_testing_result}
+
+
+@app.post("/retrieve/unit_test_results", tags=["White Box Testing"])
+def retrieve_unit_test_results(request: RetrieveResultRequest):
+    """
+    Retrieve unit test result for a given repository.
+    Returns only the repo_name and unit_test_result column.
+    """
+    repo_name = request.repo_name
+    result = supabase.table("unit_test_results") \
+        .select("repo_name, unit_test_result") \
+        .eq("repo_name", repo_name) \
+        .execute()
+
+    if not result.data or len(result.data) == 0:
+        raise HTTPException(status_code=404, detail="No unit test results found for the given repository.")
+
+    # Assuming one record per repo, return the first record.
+    record = result.data[0]
+    return {"repo_name": record.get("repo_name"), "unit_test_result": record.get("unit_test_result")}
+
+
+@app.post("/retrieve/code_review_results", tags=["White Box Testing"])
+def retrieve_code_review_results(request: RetrieveResultRequest):
+    """
+    Retrieve code review result for a given repository.
+    Returns only the repo_name and code_review_result column.
+    """
+    repo_name = request.repo_name
+    result = supabase.table("code_review_results") \
+        .select("repo_name, code_review_result") \
+        .eq("repo_name", repo_name) \
+        .execute()
+
+    if not result.data or len(result.data) == 0:
+        raise HTTPException(status_code=404, detail="No code review results found for the given repository.")
+
+    # Assuming one record per repo, return the first record.
+    record = result.data[0]
+    return {"repo_name": record.get("repo_name"), "code_review_result": record.get("code_review_result")}
+
 
