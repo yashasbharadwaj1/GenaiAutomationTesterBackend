@@ -5,9 +5,9 @@ import re
 import tempfile
 import time
 import uuid
-from datetime import datetime
 from io import BytesIO
 import cv2
+import git
 import httpx
 from PIL import Image, ImageFilter
 from dotenv import load_dotenv
@@ -19,8 +19,8 @@ from supabase import create_client, Client
 from typing import Union
 from base_models import *
 from execute_test_case import run_agent
-import imageio
-from moviepy import *
+import requests
+from werkzeug.utils import secure_filename
 
 load_dotenv()
 
@@ -58,7 +58,9 @@ def process_response(response_text: str):
         raise ValueError(f"Error parsing JSON: {e}")
     return data
 
+
 ALLOWED_EXTENSIONS = {'.pdf', '.mp4'}
+
 
 def upload_file_to_supabase(file: Union[str, UploadFile], bucket_name: str = "files") -> str:
     """
@@ -105,6 +107,7 @@ def upload_file_to_supabase(file: Union[str, UploadFile], bucket_name: str = "fi
 
     public_url = supabase.storage.from_(bucket_name).get_public_url(filename)
     return public_url
+
 
 @app.post("/upload/pdf", response_model=UploadResponse, tags=["Black Box Testing"])
 def upload_pdf_file(
@@ -358,25 +361,6 @@ async def execute_test_cases(test_cases_prompt: TestCasesPrompt):
     project_name = item.get("project")
     test_suite_name = item.get("test_suite")
 
-    temp_dir = os.path.abspath("tempdir")
-    os.makedirs(temp_dir, exist_ok=True)
-
-    # Convert GIF to Video mp4
-    # frames = imageio.mimread("agent_history.gif")
-    # clip = ImageSequenceClip(frames, fps=1)
-    # video_filename = f"{project_name}_{test_suite_name}.mp4"
-    # video_file_path = os.path.join(temp_dir, video_filename)
-    # clip.write_videofile(video_file_path, codec="libx264")
-
-    # Upload the video file to Supabase.
-    # video_public_url = upload_file_to_supabase(video_file_path)
-
-    # Remove the local video file after uploading.
-    # if os.path.exists(video_file_path):
-    #     os.remove(video_file_path)
-
-    agent_response["video_public_url"] = "empty"
-
     # Delete any previous results for the same project and test suite.
     supabase.table("results") \
         .delete() \
@@ -388,7 +372,6 @@ async def execute_test_cases(test_cases_prompt: TestCasesPrompt):
         "project": project_name,
         "test_suite": test_suite_name,
         "test_case_results": agent_response.get("results"),
-        "video_url": agent_response.get("video_public_url"),
     }
 
     supabase.table("results").insert(data).execute()
@@ -429,6 +412,23 @@ def upload_testing_steps(request: TestCase):
     return {"status": "success", "data": row}
 
 
+# Define a safe root for all repository paths.
+SAFE_ROOT = os.path.abspath("repositories")
+if not os.path.exists(SAFE_ROOT):
+    os.makedirs(SAFE_ROOT)
+
+def get_safe_repo_path(repo_name: str) -> str:
+    """
+    Normalize and validate the repository name to ensure the path is safe.
+    The repository will be stored under the SAFE_ROOT directory.
+    """
+    sanitized_repo_name = secure_filename(repo_name)
+    normalized = os.path.normpath(sanitized_repo_name)
+    full_path = os.path.join(SAFE_ROOT, normalized)
+    # Ensure that the full path is within the safe root.
+    if not os.path.abspath(full_path).startswith(SAFE_ROOT):
+        raise HTTPException(status_code=400, detail="Invalid repository name.")
+    return full_path
 
 def parse_github_repo(repo_url: str):
     """
@@ -444,7 +444,6 @@ def parse_github_repo(repo_url: str):
         return owner, repo_name
     return None, None
 
-
 def check_repo_privacy(owner: str, repo_name: str, username: str = None, pat_token: str = None):
     """
     Uses GitHub API to determine if a repository is private.
@@ -453,7 +452,6 @@ def check_repo_privacy(owner: str, repo_name: str, username: str = None, pat_tok
     auth = None
     if pat_token:
         # For private repo API access, credentials are needed.
-        # If username isn't provided, an empty string is used.
         auth = (username if username else "", pat_token)
     response = requests.get(api_url, auth=auth)
     if response.status_code == 200:
@@ -465,10 +463,9 @@ def check_repo_privacy(owner: str, repo_name: str, username: str = None, pat_tok
             detail=f"Error accessing repository info: {response.text}"
         )
 
-
 def clone_repo(repo_url: str, destination_folder: str, branch: str = None):
     """
-    Clones the repository if the destination folder does not exist.
+    Clones the repository into destination_folder if it does not exist.
     If a branch is specified, clones that branch; otherwise, clones the default branch.
     """
     if not os.path.exists(destination_folder):
@@ -483,7 +480,6 @@ def clone_repo(repo_url: str, destination_folder: str, branch: str = None):
     else:
         return f"Directory '{destination_folder}' already exists. Skipping clone."
 
-
 @app.post("/clone/repo", tags=["White Box Testing"])
 def clone_github_repo(clone_request: CloneRequest):
     repo_url = clone_request.repo_url
@@ -494,8 +490,8 @@ def clone_github_repo(clone_request: CloneRequest):
     if not owner or not repo_name:
         raise HTTPException(status_code=400, detail="Invalid GitHub repository URL format.")
 
-    # Use the repository name as the destination folder.
-    destination_folder = repo_name
+    # Get a safe destination folder within SAFE_ROOT.
+    destination_folder = get_safe_repo_path(repo_name)
 
     # Determine if the repository is private by calling the GitHub API.
     try:
@@ -503,21 +499,19 @@ def clone_github_repo(clone_request: CloneRequest):
     except HTTPException as e:
         raise e
 
-    # For private repos, ensure that a PAT token is provided.
+    # For private repos, ensure that a PAT token is provided and modify the repo URL accordingly.
     if is_private:
         if not clone_request.pat_token:
             raise HTTPException(
                 status_code=401,
                 detail="Private repository requires a Personal Access Token (PAT)."
             )
-        # Modify the repo URL to include authentication credentials.
         if repo_url.startswith("https://"):
             user = clone_request.username if clone_request.username else ""
             repo_url = repo_url.replace("https://", f"https://{user}:{clone_request.pat_token}@")
 
     message = clone_repo(repo_url, destination_folder, branch)
     return {"message": message, "destination": destination_folder}
-
 
 def get_code_from_files(folder, extensions=None):
     """
@@ -535,7 +529,7 @@ def get_code_from_files(folder, extensions=None):
                         code = f.read()
                         code_snippets[file_path] = code
                 except Exception as e:
-                    print(f"Failed to read {file_path}: {e}")
+                    logger.error(f"Failed to read {file_path}: {e}")
     return code_snippets
 
 def aggregate_code(code_snippets):
@@ -547,10 +541,10 @@ def aggregate_code(code_snippets):
         aggregated += f"File: {file_path}\n{code}\n\n"
     return aggregated
 
-
 @app.post("/analyze/code_review", tags=["White Box Testing"])
 def analyze_code_review(request: CodeReviewRequest):
-    folder = request.repo_name
+    # Validate and get the safe repository folder.
+    folder = get_safe_repo_path(request.repo_name)
     if not os.path.exists(folder):
         raise HTTPException(status_code=404, detail=f"Repository folder '{folder}' not found.")
 
@@ -558,7 +552,7 @@ def analyze_code_review(request: CodeReviewRequest):
     code_files = get_code_from_files(folder)
     aggregated_code = aggregate_code(code_files)
 
-    # Define system instruction to direct Gemini for a factor-based analysis in JSON.
+    # System instruction for factor-based code review analysis.
     system_instruction = r"""
 You are a code review agent. You will be given a large chunk of code.
 Please analyze the code for the following factors and return the result in valid JSON format:
@@ -593,13 +587,14 @@ Analyze the code based on:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error communicating with Gemini: {e}")
 
+    # Assume process_response is a function that cleans or parses the Gemini output.
     processed_code_review_result = process_response(code_review_result)
-    return {"result": processed_code_review_result}
-
+    return {"repo":folder,"result": processed_code_review_result}
 
 @app.post("/generate/unit_tests", tags=["White Box Testing"])
 def generate_unit_tests(request: UnitTestRequest):
-    folder = request.repo_name
+    # Validate and get the safe repository folder.
+    folder = get_safe_repo_path(request.repo_name)
     if not os.path.exists(folder):
         raise HTTPException(status_code=404, detail=f"Repository folder '{folder}' not found.")
 
@@ -626,4 +621,4 @@ Do not include any additional text, explanations, or JSON formatting—only the 
         raise HTTPException(status_code=500, detail=f"Error communicating with Gemini: {e}")
 
     logger.info("unit testing result: %s", unit_testing_result)
-    return {"repo": folder, "unit_tests": unit_testing_result}
+    return {"repo": folder, "result": unit_testing_result}
