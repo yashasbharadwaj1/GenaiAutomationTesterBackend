@@ -11,5 +11,10 @@ langchain-google-genai
 truststore
 browser_use
 imageio
-moviepy
 gitpython
+uvicorn
+requests
+Werkzeug
+python-dateutil
+truststore
+
