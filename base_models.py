@@ -52,4 +52,7 @@ class CodeReviewRequest(BaseModel):
     repo_name: str
 
 class UnitTestRequest(BaseModel):
+    repo_name: str 
+
+class RetrieveResultRequest(BaseModel):
     repo_name: str
