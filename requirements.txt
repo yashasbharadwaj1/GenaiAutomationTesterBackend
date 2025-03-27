@@ -17,4 +17,5 @@ requests
 Werkzeug
 python-dateutil
 truststore
+python-multipart
 
