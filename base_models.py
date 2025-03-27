@@ -41,4 +41,15 @@ class TestCaseExtractorResponse(BaseModel):
 class TestCasesPrompt(BaseModel):
     test_cases: List[dict]
 
+class CloneRequest(BaseModel):
+    repo_url: str
+    username: str = None
+    pat_token: str = None
+    branch: str
 
+
+class CodeReviewRequest(BaseModel):
+    repo_name: str
+
+class UnitTestRequest(BaseModel):
+    repo_name: str
