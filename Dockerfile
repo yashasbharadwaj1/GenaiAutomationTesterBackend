@@ -40,4 +40,4 @@ EXPOSE 8000
 # ENV GIT_PYTHON_GIT_EXECUTABLE=/usr/bin/git
 
 # Use an entrypoint that starts DBus and Xvfb before running your app.
-CMD ["bash", "-c", "dbus-daemon --system & xvfb-run --server-args='-screen 0 1920x1080x24' uvicorn main:app --host 0.0.0.0 --port 8000"]
+CMD ["bash", "-c", "xvfb-run --server-args='-screen 0 1920x1080x24' uvicorn main:app --host 0.0.0.0 --port 8000"]
