@@ -30,16 +30,11 @@ RUN pip install playwright && python -m playwright install-deps && playwright in
 # Copy your application code
 COPY . /app
 
-# Unset DISPLAY to avoid any accidental X server connection attempts
-ENV DISPLAY=
-
-# Expose the port your FastAPI app uses (adjust as needed)
-EXPOSE 8000
-
-# Optionally, if you run into issues with GitPython still not locating git, set the executable path explicitly:
+# Optionally, if you run into issues with GitPython not locating git, set the executable path explicitly:
 # ENV GIT_PYTHON_GIT_EXECUTABLE=/usr/bin/git
 
-# Use an entrypoint that starts DBus and Xvfb before running your app.
+# Expose the port your FastAPI app uses
+EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-
+# Use an entrypoint that starts Xvfb and sets required environment variables
+CMD ["bash", "-c", "Xvfb :99 -screen 0 1920x1080x24 & export DISPLAY=:99; export DBUS_SESSION_BUS_ADDRESS=/dev/null; uvicorn main:app --host 0.0.0.0 --port 8000"]
